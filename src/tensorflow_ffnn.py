@@ -14,15 +14,15 @@ def multilayer_perceptron(x, layer_dims):
     '''
     assert x.shape[1] == layer_dims[0]
 
+    ndofs = 0
     layer_i = x  # The previous one
     # Buld graph for all up to last hidden
     for dim_i, dim_o in zip(layer_dims[:-2], layer_dims[1:]):
-
-        weights = tf.Variable(tf.truncated_normal([dim_o, dim_i], stddev=0.1))
-        print (dim_i, dim_o), weights.shape, layer_i.shape
+        weights = tf.Variable(tf.truncated_normal([dim_i, dim_o], stddev=0.1))
         biases = tf.Variable(tf.constant(0.1, shape=[dim_o]))
+        ndofs += np.prod(weights.shape) + np.prod(biases.shape)
         
-        layer_o = tf.add(tf.matmul(weights, layer_i), biases)
+        layer_o = tf.add(tf.matmul(layer_i, weights), biases)
         # With ReLU activation
         layer_o = tf.nn.relu(layer_o)
 
@@ -30,18 +30,20 @@ def multilayer_perceptron(x, layer_dims):
 
     # Now from hidden to output
     dim_i, dim_o = layer_dims[-2:]
-    weights = tf.Variable(tf.truncated_normal([dim_o, dim_i], stddev=0.1))
+    weights = tf.Variable(tf.truncated_normal([dim_i, dim_o], stddev=0.1))
     biases = tf.Variable(tf.constant(0.1, shape=[dim_o]))
+    ndofs += np.prod(weights.shape) + np.prod(biases.shape)
     
-    layer_o = tf.add(tf.matmul(weights, layer_i), biases)
+    layer_o = tf.add(tf.matmul(layer_i, weights), biases)
 
-    return layer_o
+    return layer_o, ndofs
 
 
 # --------------------------------------------------------------------
 
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
     import numpy as np
 
     
@@ -58,13 +60,13 @@ if __name__ == '__main__':
         return y
 
     # Spec the architecture
-    layer_dims = [1, 50, 10, 1]
+    layer_dims = [1, 2, 4, 2, 1]
 
     x = tf.placeholder(tf.float32, [None, layer_dims[0]])
-    y = tf.placeholder(tf.float32, [None, layer_dims[1]])
+    y = tf.placeholder(tf.float32, [None, layer_dims[-1]])
 
     # The net is now
-    NN = multilayer_perceptron(x, layer_dims)
+    NN, ndofs = multilayer_perceptron(x, layer_dims)
 
     # The loss functional
     loss = tf.reduce_mean(tf.square(NN - y))
@@ -72,7 +74,7 @@ if __name__ == '__main__':
     learning_rate = 1E-4
     train = tf.train.AdamOptimizer(learning_rate).minimize(loss)
     
-    training_epochs = 10000
+    training_epochs = 20000
     batch_size = 500
     display_step = 500
 
@@ -89,20 +91,21 @@ if __name__ == '__main__':
         sess.run(train, feed_dict={x: x_data, y: y_data})
     
         if step % display_step == 0:
-            curX = np.random.rand(1, 1).astype(np.float32)
-            curY = target_foo(curX)
+            x_test = np.random.rand(1, 1).astype(np.float32)
+            y_test = target_foo(x_test)
 
-            curPrediction = sess.run(NN, feed_dict={x_data: curX})
-            curLoss = sess.run(loss, feed_dict={x_data: curX, y_data: curY})
+            error = sess.run(loss, feed_dict={x: x_test, y: y_test})
         
-            print 'At step %d error %g' % (step, curLoss)
+            print 'At step %d error %g' % (step, error)
 
-# #x = np.linspace(0, 1, 1000)
-# #y = [sess.run(NN, feed_dict={x_data: np.array([[xi]])}) for xi in x]
-# #y = np.array(y).flatten()
+    x_ = np.linspace(0, 1, 1000)
+    y_ = [sess.run(NN, feed_dict={x: np.array([[xi]])}) for xi in x_]
+    y_ = np.array(y_).flatten()
 
-# #import matplotlib.pyplot as plt
-
-# #plt.figure()
-# #plt.plot(x, y)
-# #plt.show()
+    print 'Network size', ndofs
+    
+    plt.figure()
+    plt.plot(x_, y_, label='num')
+    plt.plot(x_, target_foo(x_), label='truth')
+    plt.legend()
+    plt.show()
