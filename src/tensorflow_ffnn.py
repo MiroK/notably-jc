@@ -1,4 +1,6 @@
 import tensorflow as tf
+import itertools
+
 
 def multilayer_perceptron(x, layer_dims, scale=None):
     ''' o
@@ -12,22 +14,36 @@ def multilayer_perceptron(x, layer_dims, scale=None):
     Fully connected
     '''
     assert x.shape[1] == layer_dims[0]
-    
-    ndofs = 0
+
+    if scale is None:
+        ndofs = 0
+    else:
+        if isinstance(scale, tf.Variable):
+            ndofs = 1
+            scale = itertools.repeat(scale)
+        else:
+            ndofs = len(scale)
+            if ndofs == 1:
+                scale = itertools.repeat(scale[0])
+            else:
+                assert ndofs == len(layer_dims)-1
+                scale = iter(scale)
+
     layer_i = x  # The previous one
     # Buld graph for all up to last hidden
     for dim_i, dim_o in zip(layer_dims[:-2], layer_dims[1:]):
         weights = tf.Variable(tf.truncated_normal([dim_i, dim_o], stddev=0.1))
         biases = tf.Variable(tf.constant(0.1, shape=[dim_o]))
 
-        ndofs += np.prod(weights.shape) + np.prod(biases.shape) + 1
+        ndofs += np.prod(weights.shape) + np.prod(biases.shape)
         
         layer_o = tf.add(tf.matmul(layer_i, weights), biases)
         # With ReLU activation
         layer_o = tf.nn.relu(layer_o)
 
         # Common scaling for ReLU in each layer. FIXME: clipping
-        if scale is not None: layer_o = scale*tf.nn.relu(layer_o)
+        if scale is not None:
+            layer_o = next(scale)*tf.nn.relu(layer_o)
 
         layer_i = layer_o
 
@@ -38,8 +54,6 @@ def multilayer_perceptron(x, layer_dims, scale=None):
     ndofs += np.prod(weights.shape) + np.prod(biases.shape)
     
     layer_o = tf.add(tf.matmul(layer_i, weights), biases)
-
-    if scale is not None: ndofs += 1
 
     return layer_o, ndofs
 
@@ -64,19 +78,26 @@ if __name__ == '__main__':
 
         return y
 
+    def predict(sess, NN, x, x_values):
+        y_ = [sess.run(NN, feed_dict={x: np.array([[xi]])}) for xi in x_values]
+        return np.array(y_).flatten()
+
     # Spec the architecture
     layer_dims = [1, 2, 4, 2, 1]
 
     x = tf.placeholder(tf.float32, [None, layer_dims[0]])
     y = tf.placeholder(tf.float32, [None, layer_dims[-1]])
     # Activation function scaling
-    scale = tf.Variable(tf.constant(1.), constraint=lambda t: tf.clip_by_value(t, 1E-6, 100))
-
+    get_scalar = lambda v: tf.Variable(tf.constant(v), constraint=lambda t: tf.clip_by_value(t, 1E-8, 100))
+    
+    scale = [get_scalar(1+0.1*i) for i in range(len(layer_dims)-1)]
+    # scale = None
+    
     # The net is now
     NN, ndofs = multilayer_perceptron(x, layer_dims, scale=scale)
 
     # The loss functional
-    loss = tf.reduce_mean(tf.square(NN - y))
+    loss = tf.reduce_mean(tf.square(NN - y))  # reduce_[sum, mean]
     
     learning_rate = 1E-4
     train = tf.train.AdamOptimizer(learning_rate).minimize(loss)
@@ -92,6 +113,12 @@ if __name__ == '__main__':
     sess = tf.Session()
     sess.run(init)
 
+    unit_interval = np.linspace(0, 1, 1000)
+    plt.figure()
+
+    if scale is not None:
+        scale_values = [list() for _ in range(len(scale))]
+    
     for step in range(training_epochs):
         x_data = np.random.rand(batch_size, 1).astype(np.float32)
         y_data = target_foo(x_data)
@@ -102,17 +129,22 @@ if __name__ == '__main__':
             y_test = target_foo(x_test)
 
             error = sess.run(loss, feed_dict={x: x_test, y: y_test})
-            scale_ = sess.run(scale)
-            print('At step %d error %g, scale is %g' % (step, error, scale_))
+            if scale is not None:
+                for scale_value, scale_ in zip(scale_values, scale):
+                    scale_value.append(sess.run(scale_))
+        
+            print('At step %d error %g' % (step, error))
 
-    x_ = np.linspace(0, 1, 1000)
-    y_ = [sess.run(NN, feed_dict={x: np.array([[xi]])}) for xi in x_]
-    y_ = np.array(y_).flatten()
-
+            (step % (4*display_step) == 0) and plt.plot(unit_interval, predict(sess, NN, x, unit_interval), label=str(step))
+            
     print('Network size', ndofs)
     
-    plt.figure()
-    plt.plot(x_, y_, label='num')
-    plt.plot(x_, target_foo(x_), label='truth')
+    plt.plot(unit_interval, target_foo(unit_interval), label='truth')
     plt.legend()
+
+    if scale is not None:
+        plt.figure()
+        for idx, values in enumerate(scale_values):
+            plt.plot(values, label=str(idx))
+        plt.legend()
     plt.show()
