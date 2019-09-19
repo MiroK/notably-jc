@@ -10,7 +10,8 @@ def multilayer_perceptron(x, layer_dims):
        oo
         o
    
-    Fully connected
+    Fully connected / dense network mapping x in R^n to y in R^m with
+    layer_dims = [n, ...m]
     '''
     assert x.shape[1] == layer_dims[0]
 
@@ -18,7 +19,9 @@ def multilayer_perceptron(x, layer_dims):
     layer_i = x  # The previous one
     # Buld graph for all up to last hidden
     for dim_i, dim_o in zip(layer_dims[:-2], layer_dims[1:]):
-        weights = tf.Variable(tf.truncated_normal([dim_i, dim_o], stddev=0.1))
+        # Random weights
+        weights = tf.Variable(tf.truncated_normal(shape=[dim_i, dim_o], stddev=0.1))
+        # NOTE: for fitting it seems better to have bias as constant
         biases = tf.Variable(tf.constant(0.1, shape=[dim_o]))
         ndofs += np.prod(weights.shape) + np.prod(biases.shape)
         
@@ -40,7 +43,6 @@ def multilayer_perceptron(x, layer_dims):
 
 
 # --------------------------------------------------------------------
-
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
